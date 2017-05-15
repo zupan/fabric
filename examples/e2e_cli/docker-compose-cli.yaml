@@ -2,6 +2,39 @@ version: '2'
 
 services:
 
+  couchdb0:
+    container_name: couchdb0
+    image: hyperledger/fabric-couchdb
+#   Uncomment the port mapping if you want to expose the CouchDB service,
+#   for example to utilize Fauxton User Interface in dev environments.
+    ports:
+      - "5984:5984"
+
+  couchdb1:
+    container_name: couchdb1
+    image: hyperledger/fabric-couchdb
+#   Uncomment the port mapping if you want to expose the CouchDB service,
+#   for example to utilize Fauxton User Interface in dev environments.
+    ports:
+      - "6984:5984"
+
+  couchdb2:
+    container_name: couchdb2
+    image: hyperledger/fabric-couchdb
+#   Uncomment the port mapping if you want to expose the CouchDB service,
+#   for example to utilize Fauxton User Interface in dev environments.
+    ports:
+      - "7984:5984"
+
+  couchdb3:
+    container_name: couchdb3
+    image: hyperledger/fabric-couchdb
+#   Uncomment the port mapping if you want to expose the CouchDB service,
+#   for example to utilize Fauxton User Interface in dev environments.
+    ports:
+      - "8984:5984"
+
+
   orderer.example.com:
     extends:
       file:   base/docker-compose-base.yaml

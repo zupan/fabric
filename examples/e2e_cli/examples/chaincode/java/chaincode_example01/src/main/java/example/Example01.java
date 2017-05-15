@@ -22,25 +22,26 @@ import static org.hyperledger.fabric.shim.ChaincodeHelper.newBadRequestResponse;
 import static org.hyperledger.fabric.shim.ChaincodeHelper.newInternalServerErrorResponse;
 import static org.hyperledger.fabric.shim.ChaincodeHelper.newSuccessResponse;
 
-import java.io.StringReader;
-import java.time.format.DateTimeFormatter;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Iterator;
+import java.util.List;
 
-import javax.json.Json;
-import javax.json.JsonReader;
-import javax.json.JsonObject;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import com.google.gson.Gson;
+//import org.apache.commons.logging.Log;
+//import org.apache.commons.logging.LogFactory;
 import org.hyperledger.fabric.protos.peer.ProposalResponsePackage.Response;
 import org.hyperledger.fabric.shim.ChaincodeBase;
 import org.hyperledger.fabric.shim.ChaincodeStub;
 import org.hyperledger.fabric.shim.ledger.KeyModification;
+import org.hyperledger.fabric.shim.ledger.KeyValue;
 import org.hyperledger.fabric.shim.ledger.QueryResultsIterator;
 
 
 public class Example01 extends ChaincodeBase {
 	
-	private static Log log = LogFactory.getLog(Example01.class);
+//	private static Log log = LogFactory.getLog(Example01.class);
 
 	@Override
 	public Response init(ChaincodeStub stub) {
@@ -77,6 +78,8 @@ public class Example01 extends ChaincodeBase {
 				return query(stub, args);
 			case "history":
 				return history(stub, args);
+            case "queryByProperty":
+				return queryByProperty(stub, args);
 			default:
 				return newBadRequestResponse(format("Unknown function: %s", function));
 			}
@@ -94,38 +97,18 @@ public class Example01 extends ChaincodeBase {
 		if (args.length != 3)
 		    throw new IllegalArgumentException("Incorrect number of arguments. Expecting: init(key, type, topic)");
 
-		final String key = args[0];
-		final String type = args[1];
-		final String topic = args[2];
+		Entry e = new Entry(args[0],
+                            args[1],
+                            args[2].toLowerCase().equals("publisher") ? ClientRole.Publisher : ClientRole.Subscriber,
+                            new Timestamp(Calendar.getInstance().getTime().getTime()));
 
-		stub.putStringState(key, Json.createObjectBuilder()
-                .add("type", type)
-    			.add("topic", topic)
-	    		.build().toString());
+		stub.putStringState(args[0], e.toJSON());
 
 		return newSuccessResponse();
 	}
 	
 	private Response invoke(ChaincodeStub stub, String[] args) {
-		if (args.length != 3)
-		    throw new IllegalArgumentException("Incorrect number of arguments. Expecting: invoke(key, type, topic)");
-		
-		final String key = args[0];
-		final String type = args[1];
-		final String topic = args[2];
-
-        if (!type.equals("sub") && !type.equals("pub"))
-            throw new IllegalArgumentException("Provided type is not allowed");
-
-        // perform the insert
-        JsonObject insert = Json.createObjectBuilder()
-            .add("type", type)
-            .add("topic", topic)
-            .build();
-
-        stub.putStringState(key, insert.toString());
-
-		return newSuccessResponse(insert.toString().getBytes(UTF_8));
+		return init(stub, args);
 	}
 
 	private Response delete(ChaincodeStub stub, String args[]) {
@@ -143,15 +126,27 @@ public class Example01 extends ChaincodeBase {
 		if (args.length != 1)
 		    throw new IllegalArgumentException("Incorrect number of arguments. Expecting: query(key)");
 
-		final String accountKey = args[0];
-        JsonReader jsonReader = Json.createReader(new StringReader(stub.getStringState(accountKey)));
-        JsonObject object = jsonReader.readObject();
-        jsonReader.close();
-		return newSuccessResponse(Json.createObjectBuilder()
-				.add("Key", accountKey)
-				.add("type", object.getString("type"))
-				.add("topic", object.getString("topic"))
-				.build().toString().getBytes(UTF_8));
+		return newSuccessResponse(stub.getStringState(args[0]).getBytes(UTF_8));
+    }
+
+    private Response queryByProperty(ChaincodeStub stub, String[] args) {
+        String property = args[0];
+        String value = args[1];
+
+        String query = String.format("{\"selector\":{\"%s\":\"%s\"}}", property, value);
+
+        QueryResultsIterator<KeyValue> resultQuery = stub.getQueryResult(query);
+
+        Iterator<KeyValue> iterator = resultQuery.iterator();
+        List<Entry> result = new ArrayList<>();
+
+        // DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
+        while(iterator.hasNext()) {
+            KeyValue obj = iterator.next();
+            result.add(new Entry().fromJSON(obj.getStringValue()));
+        }
+
+        return newSuccessResponse(new Gson().toJson(result, Entry.class));
     }
 
 	private Response history(ChaincodeStub stub, String[] args) {
@@ -160,23 +155,16 @@ public class Example01 extends ChaincodeBase {
 
 		final String accountKey = args[0];
         QueryResultsIterator<KeyModification> resultQuery = stub.getHistoryForKey(accountKey);
-        DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
 
-        StringBuilder result = new StringBuilder().append("[");
-        while(resultQuery.iterator().hasNext()) {
-            KeyModification obj = resultQuery.iterator().next();
+        Iterator<KeyModification> iterator = resultQuery.iterator();
+        List<Entry> result = new ArrayList<>();
 
-            result.append(Json.createObjectBuilder()
-                    .add("value", obj.getStringValue())
-                    .add("time", formatter.format(obj.getTimestamp()))
-					.build()
-					.toString());
-
-            if (resultQuery.iterator().hasNext()) result.append(",");
+        while(iterator.hasNext()) {
+            KeyModification obj = iterator.next();
+            result.add(new Entry().fromJSON(obj.getStringValue()));
         }
-        result.append("]");
 
-        return newSuccessResponse(result.toString());
+        return newSuccessResponse(new Gson().toJson(result, Entry.class));
 	}
 
 	public static void main(String[] args) throws Exception {
